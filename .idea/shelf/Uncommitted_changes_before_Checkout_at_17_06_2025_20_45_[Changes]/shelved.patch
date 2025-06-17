@@ -1,0 +1,393 @@
+Index: excel/excel_writer.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import os\r\nimport json\r\nfrom openpyxl import Workbook\r\nfrom datetime import datetime\r\nfrom openpyxl import load_workbook\r\nfrom typing import Union, List, Dict\r\nimport logging as lg\r\nlogger = lg.getLogger(\"OrderExport\")\r\nlogger.setLevel(lg.INFO)\r\nformatter = lg.Formatter('%(asctime)s - %(levelname)s - %(message)s')\r\n\r\ndef setup_logger(log_dir: str) -> None:\r\n    log_path = os.path.join(log_dir, \"export_orders.log\")\r\n    file_handler = lg.FileHandler(log_path, encoding='utf-8')\r\n    file_handler.setFormatter(formatter)\r\n    logger.addHandler(file_handler)\r\n\r\n\r\n\r\ndef parse_json_orders(orders: Union[str, List[Dict]]) -> Union[List[Dict], None]:\r\n    if isinstance(orders, str):\r\n        try:\r\n            orders = json.loads(orders)\r\n        except json.JSONDecodeError:\r\n            logger.error(\"Invalid JSON format.\")\r\n            return None\r\n\r\n    if not isinstance(orders, list) or not all(isinstance(o, dict) for o in orders):\r\n        logger.error(\"Invalid structure – must be a list of dictionaries.\")\r\n        return None\r\n\r\n    if not orders:\r\n        logger.warning(\"No orders provided.\")\r\n        return None\r\n\r\n    return orders\r\n\r\n\r\ndef create_output_folder(base_dir: str) -> str:\r\n    today = datetime.today().strftime(\"%Y-%m-%d\")\r\n    full_path = os.path.join(base_dir, today)\r\n    os.makedirs(full_path, exist_ok=True)\r\n    setup_logger(full_path)\r\n    logger.info(f\"Output directory created: {full_path}\")\r\n    return full_path\r\n\r\n\r\ndef split_orders(orders: List[Dict], chunk_size: int) -> List[List[Dict]]:\r\n    return [orders[i:i + chunk_size] for i in range(0, len(orders), chunk_size)]\r\n\r\n\r\ndef write_excel_file(orders_chunk: List[Dict], output_path: str, file_index: int) -> None:\r\n    wb = Workbook()\r\n    ws = wb.active\r\n    ws.title = \"Orders\"\r\n\r\n    headers = list(orders_chunk[0].keys())\r\n    ws.append(headers)\r\n\r\n    for order in orders_chunk:\r\n        ws.append([order.get(k, \"\") for k in headers])\r\n\r\n    today = datetime.today().strftime(\"%Y-%m-%d\")\r\n    filename = f\"orders_{today}_{file_index}.xlsx\"\r\n    full_path = os.path.join(output_path, filename)\r\n    wb.save(full_path)\r\n    logger.info(f\"Saved file: {full_path}\")\r\n\r\n\r\ndef save_orders_to_excel( orders: Union[str, List[Dict]],\r\n                          output_dir: str = \"data\",\r\n                          max_per_file: int = 24) -> bool:\r\n    try:\r\n        parsed_orders = parse_json_orders(orders)\r\n        if parsed_orders is None:\r\n            return False\r\n\r\n        folder_path = create_output_folder(output_dir)\r\n        chunks = split_orders(parsed_orders, max_per_file)\r\n\r\n        for i, chunk in enumerate(chunks, start=1):\r\n            write_excel_file(chunk, folder_path, i)\r\n        logger.info(f\"Successfully saved {len(chunks)} Excel file(s).\")\r\n        return True\r\n\r\n    except Exception as e:\r\n        logger.exception(f\"Unexpected error occurred: {e}\")\r\n        return False\r\n\r\ndef excel_to_json(excel_file_path: str, output_json_path: str = None) -> Union[List[Dict], None]:\r\n\r\n    try:\r\n        wb = load_workbook(excel_file_path)\r\n        ws = wb.active\r\n\r\n        rows = list(ws.iter_rows(values_only=True))\r\n        if not rows or len(rows) < 2:\r\n            logger.warning(\"Excel file is empty or missing data.\")\r\n            return None\r\n\r\n        headers = rows[0]\r\n        data = [dict(zip(headers, row)) for row in rows[1:]]\r\n\r\n        if output_json_path:\r\n            with open(output_json_path, 'w', encoding='utf-8') as f:\r\n                json.dump(data, f, ensure_ascii=False, indent=2)\r\n            logger.info(f\"Exported JSON to {output_json_path}\")\r\n\r\n        return data\r\n\r\n    except Exception as e:\r\n        logger.exception(f\"Failed to convert Excel to JSON: {e}\")\r\n        return None\r\n\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/excel/excel_writer.py b/excel/excel_writer.py
+--- a/excel/excel_writer.py	(revision 6bad9825b9d83828c3d57aa5c6e2dc27da451068)
++++ b/excel/excel_writer.py	(date 1750150691831)
+@@ -3,7 +3,7 @@
+ from openpyxl import Workbook
+ from datetime import datetime
+ from openpyxl import load_workbook
+-from typing import Union, List, Dict
++from typing import Union, List, Dict, Optional
+ import logging as lg
+ logger = lg.getLogger("OrderExport")
+ logger.setLevel(lg.INFO)
+@@ -88,27 +88,181 @@
+         return False
+ 
+ def excel_to_json(excel_file_path: str, output_json_path: str = None) -> Union[List[Dict], None]:
+-
+     try:
++        if not os.path.isfile(excel_file_path):
++            logger.error(f"File not found: {excel_file_path}")
++            return None
++
+         wb = load_workbook(excel_file_path)
+         ws = wb.active
+ 
+         rows = list(ws.iter_rows(values_only=True))
+         if not rows or len(rows) < 2:
+-            logger.warning("Excel file is empty or missing data.")
++            logger.warning(f"Empty or incomplete Excel file: {excel_file_path}")
+             return None
+ 
+         headers = rows[0]
+         data = [dict(zip(headers, row)) for row in rows[1:]]
+ 
+-        if output_json_path:
+-            with open(output_json_path, 'w', encoding='utf-8') as f:
+-                json.dump(data, f, ensure_ascii=False, indent=2)
+-            logger.info(f"Exported JSON to {output_json_path}")
++        if not output_json_path:
++            base_name = os.path.splitext(os.path.basename(excel_file_path))[0]
++            output_json_path = os.path.join(os.path.dirname(excel_file_path), base_name + ".json")
++
++        with open(output_json_path, 'w', encoding='utf-8') as f:
++            json.dump(data, f, ensure_ascii=False, indent=2)
+ 
++        logger.info(f"Converted {excel_file_path} to {output_json_path}")
+         return data
+ 
+     except Exception as e:
+-        logger.exception(f"Failed to convert Excel to JSON: {e}")
++        logger.exception(f"Failed to convert Excel to JSON: {excel_file_path} | Error: {e}")
+         return None
++
++
++def convert_excel_folder_to_json(folder_path: str) -> None:
++
++    if not os.path.isdir(folder_path):
++        logger.error(f"Directory not found: {folder_path}")
++        return
++
++    files = [f for f in os.listdir(folder_path) if f.lower().endswith((".xlsx", ".xls"))]
++    if not files:
++        logger.warning(f"No Excel files found in directory: {folder_path}")
++        return
++
++    for file_name in files:
++        excel_path = os.path.join(folder_path, file_name)
++        logger.info(f"Processing file: {excel_path}")
++        excel_to_json(excel_path)
++
++
++def update_excel_column_by_dbid(
++    file_path: str,
++    dbids_to_update: List[Union[str, int]],
++    column_name: str,
++    new_value: str,
++    save_as: str = None
++) -> None:
++
++    try:
++        wb = load_workbook(file_path)
++        ws = wb.active
++
++        headers = {cell.value: idx for idx, cell in enumerate(ws[1], start=1)}
++        if column_name not in headers or "dbId" not in headers:
++            error_msg = f"Missing columns: dbId or {column_name}"
++            logger.error(error_msg)
++            raise ValueError(error_msg)
++
++        col_idx = headers[column_name]
++        dbid_idx = headers["dbId"]
++
++        updated_rows = 0
++        for row in ws.iter_rows(min_row=2):
++            dbid_cell = row[dbid_idx - 1].value
++            if str(dbid_cell) in map(str, dbids_to_update):
++                row[col_idx - 1].value = new_value
++                updated_rows += 1
++
++        if save_as:
++            wb.save(save_as)
++            logger.info(f"File saved as {save_as}")
++        else:
++            wb.save(file_path)
++            logger.info(f"File overwritten: {file_path}")
++
++        logger.info(f"{updated_rows} rows updated successfully (column: {column_name})")
++        print(f"{updated_rows} rows updated successfully.")
++
++    except FileNotFoundError:
++        logger.error(f"File not found: {file_path}")
++        print(f"Error: File not found: {file_path}")
++
++    except Exception as e:
++        logger.exception("An unexpected error occurred while updating Excel.")
++        print(f"Unexpected error: {e}")
++
++
++def load_excel_headers(ws) -> Dict[str, int]:
++    return {cell.value: idx for idx, cell in enumerate(ws[1], start=1)}
++
++
++def find_row_by_dbid(ws, dbid: Union[int, str], dbid_col_idx: int):
++    for row in ws.iter_rows(min_row=2):
++        if str(row[dbid_col_idx - 1].value) == str(dbid):
++            return row
++    return None
+ 
++
++def update_excel_row_by_dbid(
++    file_path: str,
++    dbid: Union[int, str],
++    updates: Dict[str, Union[str, int, float]],
++    save_as: Optional[str] = None
++) -> None:
++
++    try:
++        wb = load_workbook(file_path)
++        ws = wb.active
++
++        headers = load_excel_headers(ws)
++
++        if "dbId" not in headers:
++            raise ValueError("Missing required column: 'dbId'")
++
++        dbid_col_idx = headers["dbId"]
++        target_row = find_row_by_dbid(ws, dbid, dbid_col_idx)
++
++        if target_row is None:
++            msg = f"dbId {dbid} not found in file."
++            logger.warning(msg)
++            print(msg)
++            return
++
++        for column, new_value in updates.items():
++            if column not in headers:
++                raise ValueError(f"Column '{column}' not found in file.")
++            col_idx = headers[column]
++            target_row[col_idx - 1].value = new_value
++            logger.info(f"dbId={dbid}: '{column}' updated to '{new_value}'")
++
++        output_path = save_as or file_path
++        wb.save(output_path)
++        logger.info(f"File saved: {output_path}")
++        print(f"Row with dbId={dbid} updated successfully.")
++
++    except FileNotFoundError:
++        msg = f"File not found: {file_path}"
++        logger.error(msg)
++        print(f"Error: {msg}")
++
++    except Exception as e:
++        logger.exception("Unexpected error occurred while updating row.")
++        print(f"Unexpected error: {e}")
++
++
++def main():
++    file_path = r"C:\Users\USER\Desktop\פרויקט אהבה קטנה\Ahava-Ktana-Desktop\excel\data\2025-06-15/orders_2025-06-15_1.xlsx"
++    dbids = [12347, 12348]
++    column = "graphicStatus"
++    new_value = "not ready"
++
++
++    update_excel_column_by_dbid(
++        file_path=file_path,
++        dbids_to_update=dbids,
++        column_name=column,
++        new_value=new_value,
++
++    )
++    update_excel_row_by_dbid(
++        file_path=file_path,
++        dbid=12345,
++        updates={
++            "graphicStatus": "Completed",
++            "orderStatus": "Approved"
++        },
++    )
++
++if __name__ == "__main__":
++    main()
+\ No newline at end of file
+Index: .idea/misc.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<project version=\"4\">\r\n  <component name=\"ProjectRootManager\" version=\"2\" project-jdk-name=\"Python 3.7 (Ahava-Ktana-Desktop)\" project-jdk-type=\"Python SDK\" />\r\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/misc.xml b/.idea/misc.xml
+--- a/.idea/misc.xml	(revision 6bad9825b9d83828c3d57aa5c6e2dc27da451068)
++++ b/.idea/misc.xml	(date 1750104725129)
+@@ -1,4 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <project version="4">
+-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.7 (Ahava-Ktana-Desktop)" project-jdk-type="Python SDK" />
++  <component name="Black">
++    <option name="sdkName" value="Python 3.12 (LearningTest)" />
++  </component>
++  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (LearningTest)" project-jdk-type="Python SDK" />
+ </project>
+\ No newline at end of file
+Index: .idea/Ahava-Ktana-Desktop.iml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<module type=\"PYTHON_MODULE\" version=\"4\">\r\n  <component name=\"NewModuleRootManager\">\r\n    <content url=\"file://$MODULE_DIR$\">\r\n      <excludeFolder url=\"file://$MODULE_DIR$/venv\" />\r\n    </content>\r\n    <orderEntry type=\"jdk\" jdkName=\"Python 3.7 (Ahava-Ktana-Desktop)\" jdkType=\"Python SDK\" />\r\n    <orderEntry type=\"sourceFolder\" forTests=\"false\" />\r\n  </component>\r\n</module>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/Ahava-Ktana-Desktop.iml b/.idea/Ahava-Ktana-Desktop.iml
+--- a/.idea/Ahava-Ktana-Desktop.iml	(revision 6bad9825b9d83828c3d57aa5c6e2dc27da451068)
++++ b/.idea/Ahava-Ktana-Desktop.iml	(date 1750068760525)
+@@ -4,7 +4,7 @@
+     <content url="file://$MODULE_DIR$">
+       <excludeFolder url="file://$MODULE_DIR$/venv" />
+     </content>
+-    <orderEntry type="jdk" jdkName="Python 3.7 (Ahava-Ktana-Desktop)" jdkType="Python SDK" />
++    <orderEntry type="jdk" jdkName="Python 3.12 (LearningTest)" jdkType="Python SDK" />
+     <orderEntry type="sourceFolder" forTests="false" />
+   </component>
+ </module>
+\ No newline at end of file
+Index: .idea/workspace.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<project version=\"4\">\r\n  <component name=\"AutoImportSettings\">\r\n    <option name=\"autoReloadType\" value=\"SELECTIVE\" />\r\n  </component>\r\n  <component name=\"ChangeListManager\">\r\n    <list default=\"true\" id=\"4d97023e-109c-481a-9fec-7d41ac76f77c\" name=\"Changes\" comment=\"\" />\r\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\r\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\r\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\r\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\r\n  </component>\r\n  <component name=\"Git.Settings\">\r\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$\" />\r\n  </component>\r\n  <component name=\"MarkdownSettingsMigration\">\r\n    <option name=\"stateVersion\" value=\"1\" />\r\n  </component>\r\n  <component name=\"ProjectId\" id=\"2yGbb4otxOMzeMaYy0eA6LB0byz\" />\r\n  <component name=\"ProjectViewState\">\r\n    <option name=\"hideEmptyMiddlePackages\" value=\"true\" />\r\n    <option name=\"showLibraryContents\" value=\"true\" />\r\n  </component>\r\n  <component name=\"PropertiesComponent\">{\r\n  &quot;keyToString&quot;: {\r\n    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,\r\n    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,\r\n    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;\r\n  }\r\n}</component>\r\n  <component name=\"RunManager\" selected=\"Python.mock_data_tests\">\r\n    <configuration name=\"main\" type=\"PythonConfigurationType\" factoryName=\"Python\" nameIsGenerated=\"true\">\r\n      <module name=\"Ahava-Ktana-Desktop\" />\r\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\r\n      <option name=\"PARENT_ENVS\" value=\"true\" />\r\n      <envs>\r\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\r\n      </envs>\r\n      <option name=\"SDK_HOME\" value=\"\" />\r\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$\" />\r\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\r\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\r\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\r\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/main.py\" />\r\n      <option name=\"PARAMETERS\" value=\"\" />\r\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\r\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\r\n      <option name=\"MODULE_MODE\" value=\"false\" />\r\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\r\n      <option name=\"INPUT_FILE\" value=\"\" />\r\n      <method v=\"2\" />\r\n    </configuration>\r\n    <configuration name=\"mock_data_tests\" type=\"PythonConfigurationType\" factoryName=\"Python\" temporary=\"true\" nameIsGenerated=\"true\">\r\n      <module name=\"Ahava-Ktana-Desktop\" />\r\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\r\n      <option name=\"PARENT_ENVS\" value=\"true\" />\r\n      <envs>\r\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\r\n      </envs>\r\n      <option name=\"SDK_HOME\" value=\"\" />\r\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$/API\" />\r\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\r\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\r\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\r\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/API/mock_data_tests.py\" />\r\n      <option name=\"PARAMETERS\" value=\"\" />\r\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\r\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\r\n      <option name=\"MODULE_MODE\" value=\"false\" />\r\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\r\n      <option name=\"INPUT_FILE\" value=\"\" />\r\n      <method v=\"2\" />\r\n    </configuration>\r\n    <recent_temporary>\r\n      <list>\r\n        <item itemvalue=\"Python.mock_data_tests\" />\r\n      </list>\r\n    </recent_temporary>\r\n  </component>\r\n  <component name=\"SpellCheckerSettings\" RuntimeDictionaries=\"0\" Folders=\"0\" CustomDictionaries=\"0\" DefaultDictionary=\"application-level\" UseSingleDictionary=\"true\" transferred=\"true\" />\r\n  <component name=\"TaskManager\">\r\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\r\n      <changelist id=\"4d97023e-109c-481a-9fec-7d41ac76f77c\" name=\"Changes\" comment=\"\" />\r\n      <created>1749463925119</created>\r\n      <option name=\"number\" value=\"Default\" />\r\n      <option name=\"presentableId\" value=\"Default\" />\r\n      <updated>1749463925119</updated>\r\n    </task>\r\n    <task id=\"LOCAL\u200E-00001\" summary=\"basic APIs\">\r\n      <created>1749645840655</created>\r\n      <option name=\"number\" value=\"00001\" />\r\n      <option name=\"presentableId\" value=\"LOCAL\u200E-00001\" />\r\n      <option name=\"project\" value=\"LOCAL\u200E\" />\r\n      <updated>1749645840655</updated>\r\n    </task>\r\n    <task id=\"LOCAL\u200E-00002\" summary=\"final basic APIs\">\r\n      <created>1749729997721</created>\r\n      <option name=\"number\" value=\"00002\" />\r\n      <option name=\"presentableId\" value=\"LOCAL\u200E-00002\" />\r\n      <option name=\"project\" value=\"LOCAL\u200E\" />\r\n      <updated>1749729997721</updated>\r\n    </task>\r\n    <option name=\"localTasksCounter\" value=\"3\" />\r\n    <servers />\r\n  </component>\r\n  <component name=\"Vcs.Log.Tabs.Properties\">\r\n    <option name=\"TAB_STATES\">\r\n      <map>\r\n        <entry key=\"MAIN\">\r\n          <value>\r\n            <State>\r\n              <option name=\"FILTERS\">\r\n                <map>\r\n                  <entry key=\"user\">\r\n                    <value>\r\n                      <list>\r\n                        <option value=\"*\" />\r\n                      </list>\r\n                    </value>\r\n                  </entry>\r\n                </map>\r\n              </option>\r\n            </State>\r\n          </value>\r\n        </entry>\r\n      </map>\r\n    </option>\r\n    <option name=\"RECENT_FILTERS\">\r\n      <map>\r\n        <entry key=\"User\">\r\n          <value>\r\n            <list>\r\n              <RecentGroup>\r\n                <option name=\"FILTER_VALUES\">\r\n                  <option value=\"*\" />\r\n                </option>\r\n              </RecentGroup>\r\n            </list>\r\n          </value>\r\n        </entry>\r\n      </map>\r\n    </option>\r\n  </component>\r\n  <component name=\"VcsManagerConfiguration\">\r\n    <MESSAGE value=\"basic APIs\" />\r\n    <MESSAGE value=\"final basic APIs\" />\r\n    <option name=\"LAST_COMMIT_MESSAGE\" value=\"final basic APIs\" />\r\n  </component>\r\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+--- a/.idea/workspace.xml	(revision 6bad9825b9d83828c3d57aa5c6e2dc27da451068)
++++ b/.idea/workspace.xml	(date 1750105096706)
+@@ -4,13 +4,23 @@
+     <option name="autoReloadType" value="SELECTIVE" />
+   </component>
+   <component name="ChangeListManager">
+-    <list default="true" id="4d97023e-109c-481a-9fec-7d41ac76f77c" name="Changes" comment="" />
++    <list default="true" id="4d97023e-109c-481a-9fec-7d41ac76f77c" name="Changes" comment="">
++      <change beforePath="$PROJECT_DIR$/.idea/Ahava-Ktana-Desktop.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Ahava-Ktana-Desktop.iml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/excel/excel_writer.py" beforeDir="false" afterPath="$PROJECT_DIR$/excel/excel_writer.py" afterDir="false" />
++    </list>
+     <option name="SHOW_DIALOG" value="false" />
+     <option name="HIGHLIGHT_CONFLICTS" value="true" />
+     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+     <option name="LAST_RESOLUTION" value="IGNORE" />
+   </component>
+   <component name="Git.Settings">
++    <option name="RECENT_BRANCH_BY_REPOSITORY">
++      <map>
++        <entry key="$PROJECT_DIR$" value="Creating-Excel-File" />
++      </map>
++    </option>
+     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+   </component>
+   <component name="MarkdownSettingsMigration">
+@@ -21,16 +31,41 @@
+     <option name="hideEmptyMiddlePackages" value="true" />
+     <option name="showLibraryContents" value="true" />
+   </component>
+-  <component name="PropertiesComponent">{
+-  &quot;keyToString&quot;: {
+-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+-    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;
++  <component name="PropertiesComponent"><![CDATA[{
++  "keyToString": {
++    "Python.excel_writer.executor": "Run",
++    "RunOnceActivity.OpenProjectViewOnStart": "true",
++    "RunOnceActivity.ShowReadmeOnStart": "true",
++    "git-widget-placeholder": "Creating-Excel-File",
++    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+   }
+-}</component>
+-  <component name="RunManager" selected="Python.mock_data_tests">
++}]]></component>
++  <component name="RunManager" selected="Python.excel_writer">
++    <configuration name="excel_writer" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
++      <module name="Ahava-Ktana-Desktop" />
++      <option name="ENV_FILES" value="" />
++      <option name="INTERPRETER_OPTIONS" value="" />
++      <option name="PARENT_ENVS" value="true" />
++      <envs>
++        <env name="PYTHONUNBUFFERED" value="1" />
++      </envs>
++      <option name="SDK_HOME" value="" />
++      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/excel" />
++      <option name="IS_MODULE_SDK" value="true" />
++      <option name="ADD_CONTENT_ROOTS" value="true" />
++      <option name="ADD_SOURCE_ROOTS" value="true" />
++      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/excel/excel_writer.py" />
++      <option name="PARAMETERS" value="" />
++      <option name="SHOW_COMMAND_LINE" value="false" />
++      <option name="EMULATE_TERMINAL" value="false" />
++      <option name="MODULE_MODE" value="false" />
++      <option name="REDIRECT_INPUT" value="false" />
++      <option name="INPUT_FILE" value="" />
++      <method v="2" />
++    </configuration>
+     <configuration name="main" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
+       <module name="Ahava-Ktana-Desktop" />
++      <option name="ENV_FILES" value="" />
+       <option name="INTERPRETER_OPTIONS" value="" />
+       <option name="PARENT_ENVS" value="true" />
+       <envs>
+@@ -52,6 +87,7 @@
+     </configuration>
+     <configuration name="mock_data_tests" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+       <module name="Ahava-Ktana-Desktop" />
++      <option name="ENV_FILES" value="" />
+       <option name="INTERPRETER_OPTIONS" value="" />
+       <option name="PARENT_ENVS" value="true" />
+       <envs>
+@@ -73,6 +109,7 @@
+     </configuration>
+     <recent_temporary>
+       <list>
++        <item itemvalue="Python.excel_writer" />
+         <item itemvalue="Python.mock_data_tests" />
+       </list>
+     </recent_temporary>
+@@ -104,6 +141,21 @@
+     <servers />
+   </component>
+   <component name="Vcs.Log.Tabs.Properties">
++    <option name="RECENT_FILTERS">
++      <map>
++        <entry key="User">
++          <value>
++            <list>
++              <RecentGroup>
++                <option name="FILTER_VALUES">
++                  <option value="*" />
++                </option>
++              </RecentGroup>
++            </list>
++          </value>
++        </entry>
++      </map>
++    </option>
+     <option name="TAB_STATES">
+       <map>
+         <entry key="MAIN">
+@@ -121,21 +173,6 @@
+                 </map>
+               </option>
+             </State>
+-          </value>
+-        </entry>
+-      </map>
+-    </option>
+-    <option name="RECENT_FILTERS">
+-      <map>
+-        <entry key="User">
+-          <value>
+-            <list>
+-              <RecentGroup>
+-                <option name="FILTER_VALUES">
+-                  <option value="*" />
+-                </option>
+-              </RecentGroup>
+-            </list>
+           </value>
+         </entry>
+       </map>

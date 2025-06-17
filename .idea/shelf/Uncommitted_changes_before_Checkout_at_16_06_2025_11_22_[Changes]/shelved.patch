@@ -1,0 +1,24 @@
+Index: excel/excel_writer.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import os\r\nimport json\r\nfrom openpyxl import Workbook\r\nfrom datetime import datetime\r\nfrom typing import Union, List, Dict\r\nimport logging as lg\r\nlogger = lg.getLogger(\"OrderExport\")\r\nlogger.setLevel(lg.INFO)\r\nformatter = lg.Formatter('%(asctime)s - %(levelname)s - %(message)s')\r\n\r\ndef setup_logger(log_dir: str) -> None:\r\n    log_path = os.path.join(log_dir, \"export_orders.log\")\r\n    file_handler = lg.FileHandler(log_path, encoding='utf-8')\r\n    file_handler.setFormatter(formatter)\r\n    logger.addHandler(file_handler)\r\n\r\n\r\n\r\ndef parse_json_orders(orders: Union[str, List[Dict]]) -> Union[List[Dict], None]:\r\n    if isinstance(orders, str):\r\n        try:\r\n            orders = json.loads(orders)\r\n        except json.JSONDecodeError:\r\n            logger.error(\"Invalid JSON format.\")\r\n            return None\r\n\r\n    if not isinstance(orders, list) or not all(isinstance(o, dict) for o in orders):\r\n        logger.error(\"Invalid structure – must be a list of dictionaries.\")\r\n        return None\r\n\r\n    if not orders:\r\n        logger.warning(\"No orders provided.\")\r\n        return None\r\n\r\n    return orders\r\n\r\n\r\ndef create_output_folder(base_dir: str) -> str:\r\n    today = datetime.today().strftime(\"%Y-%m-%d\")\r\n    full_path = os.path.join(base_dir, today)\r\n    os.makedirs(full_path, exist_ok=True)\r\n    setup_logger(full_path)\r\n    logger.info(f\"Output directory created: {full_path}\")\r\n    return full_path\r\n\r\n\r\ndef split_orders(orders: List[Dict], chunk_size: int) -> List[List[Dict]]:\r\n    return [orders[i:i + chunk_size] for i in range(0, len(orders), chunk_size)]\r\n\r\n\r\ndef write_excel_file(orders_chunk: List[Dict], output_path: str, file_index: int) -> None:\r\n    wb = Workbook()\r\n    ws = wb.active\r\n    ws.title = \"Orders\"\r\n\r\n    headers = list(orders_chunk[0].keys())\r\n    ws.append(headers)\r\n\r\n    for order in orders_chunk:\r\n        ws.append([order.get(k, \"\") for k in headers])\r\n\r\n    today = datetime.today().strftime(\"%Y-%m-%d\")\r\n    filename = f\"orders_{today}_{file_index}.xlsx\"\r\n    full_path = os.path.join(output_path, filename)\r\n    wb.save(full_path)\r\n    logger.info(f\"Saved file: {full_path}\")\r\n\r\n\r\ndef save_orders_to_excel(\r\n    orders: Union[str, List[Dict]],\r\n    output_dir: str = \"data\",\r\n    max_per_file: int = 24\r\n) -> bool:\r\n    try:\r\n        parsed_orders = parse_json_orders(orders)\r\n        if parsed_orders is None:\r\n            return False\r\n\r\n        folder_path = create_output_folder(output_dir)\r\n        chunks = split_orders(parsed_orders, max_per_file)\r\n\r\n        for i, chunk in enumerate(chunks, start=1):\r\n            write_excel_file(chunk, folder_path, i)\r\n        logger.info(f\"Successfully saved {len(chunks)} Excel file(s).\")\r\n        return True\r\n\r\n    except Exception as e:\r\n        logger.exception(f\"Unexpected error occurred: {e}\")\r\n        return False\r\n
+===================================================================
+diff --git a/excel/excel_writer.py b/excel/excel_writer.py
+--- a/excel/excel_writer.py	(revision 3956139f21bff0040b9b49e3843e07e6065ec3af)
++++ b/excel/excel_writer.py	(date 1750062075640)
+@@ -87,3 +87,14 @@
+     except Exception as e:
+         logger.exception(f"Unexpected error occurred: {e}")
+         return False
++
++
++if __name__ == "__main__":
++    with open("mock data.json", "r", encoding="utf-8") as f:
++        json_data = f.read()
++
++    result = save_orders_to_excel(json_data)
++    if result:
++        print("✅ All orders saved successfully.")
++    else:
++        print("❌ Failed to save orders.")
+\ No newline at end of file

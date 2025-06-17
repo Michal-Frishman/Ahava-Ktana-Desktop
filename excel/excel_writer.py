@@ -2,6 +2,7 @@ import os
 import json
 from openpyxl import Workbook
 from datetime import datetime
+from openpyxl import load_workbook
 from typing import Union, List, Dict
 import logging as lg
 logger = lg.getLogger("OrderExport")
@@ -66,11 +67,9 @@ def write_excel_file(orders_chunk: List[Dict], output_path: str, file_index: int
     logger.info(f"Saved file: {full_path}")
 
 
-def save_orders_to_excel(
-    orders: Union[str, List[Dict]],
-    output_dir: str = "data",
-    max_per_file: int = 24
-) -> bool:
+def save_orders_to_excel( orders: Union[str, List[Dict]],
+                          output_dir: str = "data",
+                          max_per_file: int = 24) -> bool:
     try:
         parsed_orders = parse_json_orders(orders)
         if parsed_orders is None:
@@ -87,3 +86,29 @@ def save_orders_to_excel(
     except Exception as e:
         logger.exception(f"Unexpected error occurred: {e}")
         return False
+
+def excel_to_json(excel_file_path: str, output_json_path: str = None) -> Union[List[Dict], None]:
+
+    try:
+        wb = load_workbook(excel_file_path)
+        ws = wb.active
+
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows or len(rows) < 2:
+            logger.warning("Excel file is empty or missing data.")
+            return None
+
+        headers = rows[0]
+        data = [dict(zip(headers, row)) for row in rows[1:]]
+
+        if output_json_path:
+            with open(output_json_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.info(f"Exported JSON to {output_json_path}")
+
+        return data
+
+    except Exception as e:
+        logger.exception(f"Failed to convert Excel to JSON: {e}")
+        return None
+
