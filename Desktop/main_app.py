@@ -1,6 +1,6 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QStackedWidget
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 from Desktop.login import LoginPage
 from Desktop.home import HomePage
 from Desktop.create_excel import CreateExcelPage
@@ -36,6 +36,7 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     load_styles(app)
     main_app = MainApp()
+    main_app.setWindowIcon(QIcon("../assets/logo.jpg"))  # ← שים כאן את הלוגו שלך
     main_app.setWindowTitle("Excel Automation Suite – Ahavaktana Style")
     main_app.resize(900, 650)
     main_app.show()
